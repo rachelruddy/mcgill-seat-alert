@@ -1,7 +1,5 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -20,9 +18,11 @@ from requests.exceptions import RequestException
 PUSHOVER_USER_KEY = os.environ.get('PUSHOVER_USER_KEY')
 PUSHOVER_API_TOKEN = os.environ.get('PUSHOVER_API_TOKEN')
 
+# Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def get_config():
+    # Parse command-line arguments and load configuration from JSON file
     parser = argparse.ArgumentParser(description='Check course availability at McGill')
     parser.add_argument('--config', default='config.json', help='Path to the configuration file')
     args = parser.parse_args()
@@ -40,10 +40,12 @@ def get_config():
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
 def load_webpage(driver, url):
+    # Load webpage with retry mechanism in case of failure
     driver.get(url)
     logging.info("Webpage loaded successfully.")
 
 def send_notification(title, message):
+    # Send push notification using Pushover API
     try:
         pushover = PushoverAPI(PUSHOVER_API_TOKEN)
         pushover.send_message(PUSHOVER_USER_KEY, message, title=title)
@@ -52,41 +54,65 @@ def send_notification(title, message):
         logging.error(f"Failed to send notification: {str(e)}")
 
 def scroll_to_element(driver, element):
+    # Scroll to the specified element to ensure it's in view
     actions = ActionChains(driver)
     actions.move_to_element(element).perform()
 
 def get_course_availability(driver, course):
+    # Check availability for a specific course
     try:
-        course_box = WebDriverWait(driver, 10).until(
+        logging.info(f"Searching for course: {course}")
+        wait = WebDriverWait(driver, 20)
+        course_box = wait.until(
             EC.presence_of_element_located((By.XPATH, f"//div[contains(@class, 'course_box') and contains(., '{course}')]"))
         )
+        logging.info(f"Found course box for: {course}")
         scroll_to_element(driver, course_box)
         
         sections = course_box.find_elements(By.XPATH, ".//div[contains(@class, 'selection_row')]")
+        logging.info(f"Found {len(sections)} sections for course: {course}")
         
         available_sections = []
         
         for section in sections:
-            if "Lec" in section.text:
-                crn = section.find_element(By.XPATH, ".//span[@class='crn_value']").text
-                
-                seats_element = section.find_element(By.XPATH, ".//span[contains(@class, 'leftnclear') and contains(., 'Seats:')]")
-                if "Full" not in seats_element.text:
-                    available_sections.append((crn, "Open seats"))
-                    continue
-                
-                waitlist_element = section.find_element(By.XPATH, ".//span[contains(@class, 'legend_waitlist')]")
-                if "None" not in waitlist_element.text:
-                    available_sections.append((crn, "Waitlist"))
+            try:
+                if "Lec" in section.text:
+                    # Extract CRN and check for open seats or waitlist availability
+                    crn = section.find_element(By.XPATH, ".//span[@class='crn_value']").text
+                    
+                    seats_element = section.find_element(By.XPATH, ".//span[contains(@class, 'leftnclear') and contains(., 'Seats:')]")
+                    if "Full" not in seats_element.text:
+                        available_sections.append((crn, "Open seats"))
+                        continue
+                    
+                    waitlist_element = section.find_element(By.XPATH, ".//span[contains(@class, 'legend_waitlist')]")
+                    if "None" not in waitlist_element.text:
+                        available_sections.append((crn, "Waitlist"))
+            except NoSuchElementException as e:
+                logging.warning(f"Error processing section in {course}: {str(e)}")
         
         return available_sections
+    except TimeoutException:
+        logging.error(f"Timeout while searching for course: {course}")
     except Exception as e:
         logging.error(f"Error checking availability for {course}: {str(e)}")
-        return []
+    return []
+
+def setup_driver():
+    # Configure and initialize Chrome WebDriver
+    chrome_options = Options()
+    chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--window-size=800,1080')
+    
+    driver = webdriver.Chrome(options=chrome_options)
+    return driver
 
 def perform_web_task():
     logging.info("Starting web task...")
     
+    # Load configuration
     config = get_config()
     if not config:
         return
@@ -100,56 +126,53 @@ def perform_web_task():
 
     logging.info(f"Checking availability for courses: {courses}")
     
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
+    driver = setup_driver()
     
     try:
-        logging.info("Creating Chrome WebDriver...")
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        driver.set_window_size(800, 1080)
-        logging.info("Chrome WebDriver created successfully.")
-        
+        # Navigate to the course selection page
         load_webpage(driver, "https://vsb.mcgill.ca/vsb/criteria.jsp?access=0&lang=en&tip=1&page=results&scratch=0&term=0&sort=none&filters=iiiiiiiii&bbs=&ds=&cams=Distance_Downtown_Macdonald_Off-Campus&locs=any&isrts=&course_0_0=&sa_0_0=&cs_0_0=--+All+--&cpn_0_0=&csn_0_0=&ca_0_0=&dropdown_0_0=al&ig_0_0=0&rq_0_0=")
         
-        continue_button = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//input[@type='button' and @value='Continue']")))
+        # Click the Continue button
+        continue_button = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.XPATH, "//input[@type='button' and @value='Continue']")))
         scroll_to_element(driver, continue_button)
         continue_button.click()
         logging.info("Clicked the Continue button.")
 
-        term_button = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, f"//input[@name='radterm' and @data-term='{term}']")))
+        # Select the desired term
+        term_button = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.XPATH, f"//input[@name='radterm' and @data-term='{term}']")))
         scroll_to_element(driver, term_button)
         term_button.click()
         logging.info(f"Selected term: {term}")
 
-        time.sleep(2)  # Wait for the page to update
+        time.sleep(5)
 
+        # Enter and select each course
         for course in courses:
             logging.info(f"Entering course: {course}")
             
-            course_input = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "code_number")))
+            course_input = WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.ID, "code_number")))
             scroll_to_element(driver, course_input)
             course_input.clear()
             course_input.send_keys(course)
             
-            select_button = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "addCourseButton")))
+            select_button = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.ID, "addCourseButton")))
             scroll_to_element(driver, select_button)
             select_button.click()
             
             logging.info(f"Selected course: {course}")
-            time.sleep(2)  # Wait for the course to be added
+            time.sleep(3)
 
         logging.info("All courses entered and selected.")
 
-        generate_button = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "do_search")))
+        # Generate schedules
+        generate_button = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.ID, "do_search")))
         scroll_to_element(driver, generate_button)
         generate_button.click()
         logging.info("Clicked 'Generate Schedules' button.")
 
-        time.sleep(10)  # Wait for the schedules to be generated
+        time.sleep(15)
 
+        # Check availability for each course
         logging.info("Checking course availability...")
         available_courses = {}
         for course in courses:
@@ -162,6 +185,7 @@ def perform_web_task():
             else:
                 logging.info(f"Course {course} is not available")
 
+        # Send notification if any courses are available
         if available_courses:
             notification_title = "Course Availability Alert"
             notification_body = "The following courses are available:\n"
@@ -174,17 +198,10 @@ def perform_web_task():
             logging.info("No courses are currently available.")
 
         logging.info("All courses have been checked for availability.")
-
-    except RequestException as e:
-        logging.error(f"Network error occurred: {str(e)}")
     except Exception as e:
-        logging.error(f"An error occurred: {str(e)}")
-        send_notification("Course Check Error", f"An error occurred while checking course availability: {str(e)}")
+        logging.error(f"An error occurred during web task: {str(e)}")
     finally:
-        if 'driver' in locals():
-            logging.info("Closing browser...")
-            driver.quit()
-            logging.info("Browser closed.")
+        driver.quit()
 
 if __name__ == "__main__":
     perform_web_task()

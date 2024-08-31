@@ -1,41 +1,57 @@
-# McGill Course Auto-Register
+# McGill Seat Alert
 
-An automated tool to register for courses at McGill University.
+An automated tool to check course availability at McGill University and send notifications when courses become available.
 
 ## Description
 
-This project provides a script to automatically register for courses at McGill University. It aims to help students quickly secure spots in high-demand classes when registration opens.
+This project provides a script that automatically checks the availability of specified courses at McGill University using GitHub Actions. When a course becomes available, it sends a notification via Pushover.
 
 ## Setup
 
-1. Create a virtual environment:
-   ```
-   python -m venv .venv
-   ```
+1. Fork this repository to your GitHub account.
 
-2. Activate the virtual environment:
-   - On Windows:
-     ```
-     .venv\Scripts\activate
-     ```
-   - On macOS and Linux:
-     ```
-     source .venv/bin/activate
-     ```
+2. Set up Pushover:
+   - Create a Pushover account at https://pushover.net/
+   - Create a new application in Pushover to get an API token
+   - Note down your User Key and API Token
 
-3. Install dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
+3. Set up GitHub Secrets:
+   - Go to your forked repository on GitHub
+   - Navigate to Settings > Secrets and variables > Actions
+   - Add two new repository secrets:
+     - `PUSHOVER_USER_KEY`: Your Pushover User Key
+     - `PUSHOVER_API_TOKEN`: Your Pushover API Token
+
+4. Configure courses:
+   - Edit the `config.json` file in the repository:
+     ```json
+     {
+         "courses": ["COURSE1", "COURSE2"],
+         "term": "YYYYMM"
+     }
+     ```
+   - Replace `"COURSE1"`, `"COURSE2"` with the courses you want to check
+   - Set the `"term"` to the desired semester (e.g., "202409" for Fall 2024)
+
+5. Enable GitHub Actions:
+   - Go to the "Actions" tab in your forked repository
+   - You should see the "Check Course Availability" workflow
+   - Enable the workflow if it's not already enabled
 
 ## Usage
 
-Run the script:
-```
-python register.py
-```
+Once set up, the GitHub Action will run automatically every 10 minutes to check course availability. You can also manually trigger the workflow:
 
-**Note:** Use this tool responsibly and in accordance with McGill University's policies.
+1. Go to the "Actions" tab in your repository
+2. Select the "Check Course Availability" workflow
+3. Click "Run workflow"
+
+You will receive a Pushover notification when any of your specified courses become available.
+
+## Customization
+
+- To change the check frequency, edit the cron schedule in `.github/workflows/course_check.yml`
+- To modify the script behavior, edit `register.py`
 
 ## Disclaimer
 

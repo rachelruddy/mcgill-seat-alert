@@ -2,7 +2,7 @@ name: Check Course Availability
 
 on:
   schedule:
-    - cron: '0 * * * *'  # Runs every hour
+    - cron: '*/10 * * * *'  # Runs every hour
   workflow_dispatch:  # Allows manual triggering
 
 jobs:
@@ -21,13 +21,15 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
     
-    - name: Install Chrome
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y google-chrome-stable
+    - name: Setup Chrome and ChromeDriver
+      uses: nanasess/setup-chromedriver@v2
     
     - name: Run course check script
       env:
         PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
         PUSHOVER_API_TOKEN: ${{ secrets.PUSHOVER_API_TOKEN }}
-      run: python register.py
+      run: |
+        export DISPLAY=:99
+        sudo Xvfb -ac :99 -screen 0 1280x1024x24 > /dev/null 2>&1 &
+        chromedriver --url-base=/wd/hub &
+        python register.py
